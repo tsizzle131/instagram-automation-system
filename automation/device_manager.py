@@ -21,6 +21,7 @@ class DeviceManager:
         self.servers = {}  # Stores server info
         self.lock = threading.Lock()  # For thread safety
         self.real_device_udids = self._get_real_device_udids()  # Cache real device UDIDs
+        self.config_path = config_path # Store the config path
         
         # Load config if provided, otherwise use defaults
         if config_path and os.path.exists(config_path):
@@ -151,7 +152,7 @@ class DeviceManager:
             logger.info(f"Initialized server {server_id} with {device_count} assigned devices")
     
     def add_device(self, name, udid, platform_name, platform_version, device_name, automation_name):
-        """Add a device to be managed with automatic server assignment"""
+        """Add a device to be managed with automatic server assignment and unique wdaLocalPort"""
         # Find server with capacity
         assigned_server = None
         
@@ -165,6 +166,12 @@ class DeviceManager:
             if not assigned_server:
                 logger.error("No servers with capacity available")
                 return False
+
+            # Determine the next available wdaLocalPort
+            used_wda_ports = {dev.get('wdaLocalPort') for dev in self.config['devices'] if dev.get('wdaLocalPort')}
+            next_wda_port = 8100
+            while next_wda_port in used_wda_ports:
+                next_wda_port += 1
             
             # Create device config
             device_config = {
@@ -174,7 +181,10 @@ class DeviceManager:
                 "platformVersion": platform_version,
                 "deviceName": device_name,
                 "automationName": automation_name,
-                "server": assigned_server
+                "server": assigned_server,
+                "wdaLocalPort": next_wda_port, # Add assigned WDA port
+                "noReset": True, # Add default noReset
+                "newCommandTimeout": 360 # Add default newCommandTimeout
             }
             
             # Add to devices config
@@ -183,7 +193,15 @@ class DeviceManager:
             # Update server device count
             self.servers[assigned_server]["device_count"] += 1
             
-            logger.info(f"Added device: {name} ({udid}) to server {assigned_server}")
+            logger.info(f"Added device: {name} ({udid}) to server {assigned_server} with WDA Port {next_wda_port}")
+            
+            # Save the updated configuration
+            if not self.save_config(): # Call save_config which uses self.config_path
+                logger.error(f"Failed to save configuration after adding device {name}")
+                # Potentially roll back the add if save fails, though this adds complexity
+                # For now, just log the error. The in-memory config is updated.
+                return False # Or handle more gracefully
+            
             return True
     
     def initialize_device(self, device_config):
@@ -196,16 +214,46 @@ class DeviceManager:
             server_id = self._assign_server(device_id)
             if not server_id:
                 logger.error(f"No servers available for device {device_config['name']}")
+                # Ensure status reflects failure if no server can be assigned
+                with self.lock:
+                    if device_id not in self.devices:
+                        self.devices[device_id] = {'config': device_config, 'status': 'error', 'last_active': time.time(), 'server': None}
+                    else:
+                        self.devices[device_id]['status'] = 'error'
+                        self.devices[device_id]['last_active'] = time.time()
                 return False
             device_config['server'] = server_id
         
         # Get server config
         if server_id not in self.servers:
-            logger.error(f"Server {server_id} not found in configuration")
+            logger.error(f"Server {server_id} not found in configuration for device {device_config['name']}")
+            with self.lock:
+                if device_id not in self.devices:
+                    self.devices[device_id] = {'config': device_config, 'status': 'error', 'last_active': time.time(), 'server': server_id}
+                else:
+                    self.devices[device_id]['status'] = 'error'
+                    self.devices[device_id]['last_active'] = time.time()
             return False
             
         server_config = self.servers[server_id]["config"]
-        
+
+        # Attempt to quit existing driver for this device_id first, if any
+        with self.lock:
+            if device_id in self.drivers:
+                logger.info(f"Attempting to quit existing driver for device {device_id} before re-initializing.")
+                try:
+                    self.drivers[device_id].quit()
+                except Exception as e_quit:
+                    logger.warning(f"Error quitting existing driver for {device_id}: {str(e_quit)}")
+                finally:
+                    del self.drivers[device_id]
+            # Ensure a basic device entry exists if we are trying to initialize it
+            if device_id not in self.devices:
+                 self.devices[device_id] = {'config': device_config, 'status': 'initializing', 'last_active': time.time(), 'server': server_id}
+            else:
+                self.devices[device_id]['status'] = 'initializing'
+                self.devices[device_id]['last_active'] = time.time()
+
         try:
             logger.info(f"Initializing device: {device_config['name']} ({device_id}) on server {server_id}")
             
@@ -257,6 +305,12 @@ class DeviceManager:
             logger.error(f"Failed to initialize device {device_config['name']}: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
+            # Update status to error and remove driver if it exists
+            with self.lock:
+                if device_id in self.drivers:
+                    del self.drivers[device_id] # Ensure no stale driver object
+                self.devices[device_id]['status'] = 'error' # Set status to error
+                self.devices[device_id]['last_active'] = time.time()
             return False
     
     def _assign_server(self, device_id):

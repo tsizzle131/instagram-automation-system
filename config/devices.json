@@ -37,6 +37,18 @@
       "noReset": true,
       "newCommandTimeout": 360,
       "wdaLocalPort": 8101
+    },
+    {
+      "name": "Morgan\u2019s iPhone",
+      "udid": "00008110-0000052C02EA401E",
+      "platformName": "iOS",
+      "platformVersion": "17.4.1",
+      "deviceName": "iPhone",
+      "automationName": "XCUITest",
+      "server": "server-1",
+      "wdaLocalPort": 8102,
+      "noReset": true,
+      "newCommandTimeout": 360
     }
   ]
 }

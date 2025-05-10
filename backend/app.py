@@ -43,7 +43,16 @@ def initialize_system():
     # Initialize task runner
     task_runner = InstagramTaskRunner(device_manager, DEFAULT_UI_MAP_PATH)
     
-    logger.info("System initialized")
+    logger.info("System core initialized. Attempting to initialize all configured devices...")
+    if device_manager: # Add a check to be safe
+        try:
+            # Initialize devices from config
+            device_count = device_manager.initialize_all_devices()
+            logger.info(f"Attempted to initialize {device_count} devices on startup.")
+        except Exception as e:
+            logger.error(f"Error during automatic device initialization on startup: {str(e)}")
+            
+    logger.info("Full system initialization routine complete.")
 
 # API routes
 @app.route('/api/status', methods=['GET'])
@@ -73,14 +82,19 @@ def get_status():
 def initialize():
     """Initialize the system"""
     try:
+        # Re-call the main initialization logic, which now includes device init
         initialize_system()
-        
-        # Initialize devices from config
-        device_count = device_manager.initialize_all_devices()
-        
+
+        # The return value from initialize_all_devices is now logged within initialize_system
+        # We can get the current count of ready devices for the response if needed
+        ready_devices_count = 0
+        if device_manager:
+            ready_devices_count = len([d for d in device_manager.get_device_status().values() if d['status'] == 'ready'])
+
         return jsonify({
             'success': True,
-            'devices_initialized': device_count
+            'message': 'System initialization triggered. Check status for device readiness.',
+            'devices_initialized_or_ready': ready_devices_count
         })
     except Exception as e:
         logger.exception("Failed to initialize system")
@@ -125,7 +139,7 @@ def add_device():
         
         if success:
             # Save the updated config
-            device_manager.save_config(DEFAULT_CONFIG_PATH)
+            # device_manager.save_config(DEFAULT_CONFIG_PATH) # This is now handled by DeviceManager.add_device()
             
             return jsonify({
                 'success': True,
@@ -433,26 +447,58 @@ def refresh_devices():
         # Process each detected device
         for device in all_devices:
             device_id = device['udid']
-            
+            config_device_payload = None # To store the config for init
+
             if device_id in existing_devices:
-                logger.info(f"Device {device['name']} ({device_id}) already registered")
-                # Try to initialize if not already active
-                for config_device in device_manager.config['devices']:
-                    if config_device['udid'] == device_id:
-                        # Only initialize if not already connected
-                        device_status = device_manager.get_device_status().get(device_id, {}).get('status')
-                        if device_status not in ['ready', 'busy']:
-                            success = device_manager.initialize_device(config_device)
-                            if success:
-                                updated_devices.append(device_id)
-                                logger.info(f"Re-initialized existing device: {device['name']}")
-                            else:
-                                logger.error(f"Failed to initialize existing device: {device['name']}")
-                        else:
-                            logger.info(f"Device {device['name']} already active with status: {device_status}")
-                            updated_devices.append(device_id)
+                logger.info(f"Device {device['name']} ({device_id}) is physically connected and already in config.")
+                # Find the existing config for this device
+                for cfg_dev in device_manager.config['devices']:
+                    if cfg_dev['udid'] == device_id:
+                        config_device_payload = cfg_dev
+                        break
+                
+                if not config_device_payload:
+                    logger.error(f"Logic error: Device {device_id} in existing_devices but no config found. Skipping.")
+                    continue
+
+                # Check if the session is actually alive, or if status is not ready/busy
+                force_reinit = False
+                current_device_status_info = device_manager.devices.get(device_id)
+                
+                if current_device_status_info and current_device_status_info.get('status') in ['ready', 'busy']:
+                    driver_instance = device_manager.drivers.get(device_id)
+                    if driver_instance:
+                        try:
+                            # A lightweight check to see if session is alive
+                            _ = driver_instance.session_id 
+                            logger.info(f"Session for device {device['name']} seems alive.")
+                        except Exception: # Typically NoSuchDriverException or similar if session is dead
+                            logger.warning(f"Session for device {device['name']} ({device_id}) is dead. Forcing re-initialization.")
+                            force_reinit = True
+                    else:
+                        # Driver not found for a supposedly ready/busy device, something is wrong
+                        logger.warning(f"Device {device['name']} ({device_id}) is ready/busy but no driver instance found. Forcing re-initialization.")
+                        force_reinit = True
+                else:
+                    # Status is not ready/busy (e.g., disconnected, error, initializing)
+                    logger.info(f"Device {device['name']} ({device_id}) status is '{current_device_status_info.get('status', 'unknown')}'. Will attempt initialization.")
+                    force_reinit = True # Also re-initialize if status is not ideal
+
+                if force_reinit:
+                    logger.info(f"Attempting to re-initialize existing device: {device['name']}")
+                    success = device_manager.initialize_device(config_device_payload)
+                    if success:
+                        updated_devices.append(device_id)
+                        logger.info(f"Successfully re-initialized existing device: {device['name']}")
+                    else:
+                        logger.error(f"Failed to re-initialize existing device: {device['name']}")
+                else:
+                    # If session is alive and status is good, we can just mark it as updated
+                    logger.info(f"Device {device['name']} is already active and session is live.")
+                    updated_devices.append(device_id)
             else:
                 # Add new device
+                logger.info(f"Device {device['name']} ({device_id}) is new. Attempting to add and initialize.")
                 success = device_manager.add_device(
                     name=device['name'],
                     udid=device['udid'],
@@ -482,9 +528,41 @@ def refresh_devices():
         # Save the updated configuration
         device_manager.save_config(DEFAULT_CONFIG_PATH)
         
+        # NEW STEP: Update status for configured devices that are no longer physically detected
+        physically_detected_udids = {d['udid'] for d in all_devices}
+        with device_manager.lock: # Ensure thread safety
+            configured_devices_in_memory = list(device_manager.config['devices']) # Iterate over a copy
+            for config_device in configured_devices_in_memory:
+                config_udid = config_device['udid']
+                if config_udid not in physically_detected_udids:
+                    logger.info(f"Configured device {config_device.get('name', 'Unknown')} ({config_udid}) was not physically detected. Marking as disconnected.")
+                    # Update or create entry in the live device status dictionary
+                    if config_udid not in device_manager.devices:
+                        device_manager.devices[config_udid] = {
+                            'config': config_device,
+                            'status': 'disconnected',
+                            'last_active': time.time(),
+                            'server': config_device.get('server')
+                        }
+                    else:
+                        device_manager.devices[config_udid]['status'] = 'disconnected'
+                        device_manager.devices[config_udid]['last_active'] = time.time()
+                    
+                    # Clean up driver if it exists for this now disconnected device
+                    if config_udid in device_manager.drivers:
+                        logger.info(f"Attempting to quit driver for disconnected device {config_udid}.")
+                        try:
+                            device_manager.drivers[config_udid].quit()
+                        except Exception as e_quit:
+                            logger.warning(f"Error quitting driver for disconnected {config_udid}: {str(e_quit)}")
+                        finally:
+                            # Always remove from drivers dict if we're marking as disconnected
+                            if config_udid in device_manager.drivers:
+                                del device_manager.drivers[config_udid]
+        
         return jsonify({
             'success': True,
-            'message': f"Device refresh complete: {len(new_devices)} new, {len(updated_devices)} updated",
+            'message': f"Device refresh complete: {len(new_devices)} new, {len(updated_devices)} updated. Check status for disconnected devices.",
             'new_devices': new_devices,
             'updated_devices': updated_devices,
             'detected_devices_count': len(all_devices)
