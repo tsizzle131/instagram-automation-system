@@ -32,7 +32,6 @@ function App() {
   const [isAddingServer, setIsAddingServer] = useState(false);
   const [error, setError] = useState(null);
   const [taskResult, setTaskResult] = useState(null);
-  const [selectedTask, setSelectedTask] = useState('go_to_profile');
   const [taskInterval, setTaskInterval] = useState('');
 
   // Toggle showing simulators
@@ -216,34 +215,69 @@ function App() {
   };
 
   // Execute a task on a device
-  const executeTask = async (deviceId) => {
+  // const executeTask = async (deviceId) => { // Commented out original executeTask, will be replaced or removed if not used elsewhere
+  //   try {
+  //     setTaskResult(null);
+      
+  //     const payload = {
+  //       task_name: selectedTask
+  //     };
+      
+  //     // Add repeat interval if provided
+  //     if (taskInterval && !isNaN(taskInterval) && parseInt(taskInterval) > 0) {
+  //       payload.repeat_interval = parseInt(taskInterval);
+  //     }
+      
+  //     const response = await axios.post(
+  //       `${API_BASE_URL}/devices/${deviceId}/task`, 
+  //       payload
+  //     );
+      
+  //     setTaskResult({
+  //       device: deviceId,
+  //       task: selectedTask,
+  //       result: response.data
+  //     });
+      
+  //     await fetchStatus();
+  //   } catch (err) {
+  //     setError(`Error executing task: ${err.response?.data?.error || err.message}`);
+  //     console.error('Error executing task:', err);
+  //   }
+  // };
+
+  // New function to execute the "setup_device" task
+  const executeSetupDeviceTask = async (deviceId) => {
     try {
-      setTaskResult(null);
-      
-      const payload = {
-        task_name: selectedTask
-      };
-      
-      // Add repeat interval if provided
-      if (taskInterval && !isNaN(taskInterval) && parseInt(taskInterval) > 0) {
-        payload.repeat_interval = parseInt(taskInterval);
-      }
-      
-      const response = await axios.post(
-        `${API_BASE_URL}/devices/${deviceId}/task`, 
-        payload
-      );
+      setTaskResult(null); // Clear previous task results
+      setError(null); // Clear previous errors
+
+      const response = await axios.post(`${API_BASE_URL}/devices/${deviceId}/setup`);
       
       setTaskResult({
         device: deviceId,
-        task: selectedTask,
+        task: 'setup_device', // Task name is fixed
         result: response.data
       });
       
-      await fetchStatus();
+      if (response.data.success) {
+        // Optionally show a success message or handle as needed
+        console.log(`Setup device task started successfully for ${deviceId}:`, response.data.message);
+      } else {
+        setError(`Error starting setup task for ${deviceId}: ${response.data.error || 'Unknown error'}`);
+      }
+      
+      await fetchStatus(); // Refresh status to reflect any changes
     } catch (err) {
-      setError(`Error executing task: ${err.response?.data?.error || err.message}`);
-      console.error('Error executing task:', err);
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to execute setup task';
+      setError(`Error executing setup task for ${deviceId}: ${errorMessage}`);
+      console.error('Error executing setup_device task:', err);
+      // Ensure taskResult reflects the failure if the request itself fails
+      setTaskResult({
+        device: deviceId,
+        task: 'setup_device',
+        result: { success: false, error: errorMessage }
+      });
     }
   };
 
@@ -281,6 +315,58 @@ function App() {
   const getServerForDevice = (deviceInfo) => {
     const serverId = deviceInfo.server;
     return servers[serverId] || null;
+  };
+
+  // Add this component for displaying the device card with managed accounts
+  const DeviceCard = ({ device, deviceId }) => {
+    const hasAccounts = device.managed_accounts && device.managed_accounts.length > 0;
+    
+    return (
+      <div className={`device-card device-status-${device.status}`}>
+        <div className="device-header">
+          <h4>{device.name}</h4>
+          <span className={`status-badge status-${device.status}`}>
+            {device.status}
+          </span>
+        </div>
+        <div className="device-details">
+          <p><strong>UDID:</strong> {deviceId}</p>
+          <p><strong>Platform:</strong> {device.platform_name} {device.platform_version}</p>
+          <p><strong>Model:</strong> {device.model || 'Unknown'}</p>
+          {device.error && <p className="error-message">{device.error}</p>}
+          
+          {/* Display managed accounts */}
+          <div className="managed-accounts">
+            <h5>Instagram Accounts:</h5>
+            {hasAccounts ? (
+              <ul className="accounts-list">
+                {device.managed_accounts.map((account, index) => (
+                  <li key={index} className="account-item">{account}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="no-accounts">No accounts discovered. Run Setup Device to discover accounts.</p>
+            )}
+          </div>
+        </div>
+        <div className="device-actions">
+          <button 
+            onClick={() => initializeDevice(deviceId)} 
+            disabled={device.status === 'initializing'}
+            className="action-button"
+          >
+            Initialize
+          </button>
+          <button 
+            onClick={() => executeSetupDeviceTask(deviceId)}
+            disabled={device.status !== 'ready'}
+            className="action-button"
+          >
+            Setup Device
+          </button>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -551,59 +637,7 @@ function App() {
                   const serverInfo = getServerForDevice(deviceInfo);
                   
                   return (
-                    <div key={deviceId} className={`device-card status-${deviceInfo.status} ${deviceInfo.is_simulator ? 'simulator' : 'real-device'}`}>
-                      <div className="device-header">
-                        <h3>{deviceInfo.name}</h3>
-                        <div className="device-indicators">
-                          {deviceInfo.is_simulator && (
-                            <span className="simulator-badge">Simulator</span>
-                          )}
-                          <span className={`device-status ${deviceInfo.status}`}>
-                            {deviceInfo.status}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="device-details">
-                        <p><strong>UDID:</strong> {deviceId.substring(0, 8)}...</p>
-                        <p><strong>Server:</strong> {deviceInfo.server || "Not assigned"}</p>
-                        <p><strong>Last Active:</strong> {new Date(deviceInfo.last_active * 1000).toLocaleTimeString()}</p>
-                      </div>
-                      <div className="device-actions">
-                        {deviceInfo.status === 'disconnected' ? (
-                          <button onClick={() => initializeDevice(deviceId)} className="action-button initialize">
-                            Initialize
-                          </button>
-                        ) : (
-                          <>
-                            <div className="task-controls">
-                              <select 
-                                value={selectedTask} 
-                                onChange={(e) => setSelectedTask(e.target.value)}
-                                className="task-select"
-                              >
-                                <option value="open_instagram">Open Instagram</option>
-                                <option value="go_to_profile">Go to Profile</option>
-                                <option value="scroll_feed">Scroll Feed</option>
-                              </select>
-                              <input
-                                type="number"
-                                placeholder="Repeat interval (sec)"
-                                value={taskInterval}
-                                onChange={(e) => setTaskInterval(e.target.value)}
-                                className="interval-input"
-                              />
-                              <button 
-                                onClick={() => executeTask(deviceId)} 
-                                className="action-button"
-                                disabled={deviceInfo.status !== 'ready'}
-                              >
-                                Run
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
+                    <DeviceCard key={deviceId} device={deviceInfo} deviceId={deviceId} />
                   );
                 })
               )}

@@ -237,6 +237,9 @@ class DeviceManager:
             
         server_config = self.servers[server_id]["config"]
 
+        # Construct server URL - ensuring /wd/hub is included as Appium servers are started with it
+        server_url = f"http://{server_config['host']}:{server_config['port']}/wd/hub"
+        
         # Attempt to quit existing driver for this device_id first, if any
         with self.lock:
             if device_id in self.drivers:
@@ -273,10 +276,9 @@ class DeviceManager:
             
             # Connect to Appium server
             # Use the direct URL format (Appium 2.x) instead of /wd/hub (Appium 1.x)
-            appium_url = f"http://{server_config['host']}:{server_config['port']}"
-            logger.info(f"Connecting to Appium at: {appium_url}")
+            logger.info(f"Connecting to Appium at: {server_url}")
             
-            driver = webdriver.Remote(appium_url, desired_caps)
+            driver = webdriver.Remote(server_url, desired_caps)
             logger.info("Driver created successfully!")
             
             # Get screen dimensions
@@ -366,7 +368,8 @@ class DeviceManager:
                     'status': device_info['status'],
                     'last_active': device_info['last_active'],
                     'server': device_info['server'],
-                    'is_simulator': is_sim
+                    'is_simulator': is_sim,
+                    'config': device_info['config']  # Include the full config object
                 }
         
         return statuses

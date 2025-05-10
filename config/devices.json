@@ -4,13 +4,13 @@
       "name": "server-1",
       "host": "127.0.0.1",
       "port": 4723,
-      "max_devices": 5
+      "max_devices": 1
     },
     {
       "name": "server-2",
       "host": "127.0.0.1",
       "port": 4724,
-      "max_devices": 5
+      "max_devices": 1
     }
   ],
   "devices": [
@@ -24,31 +24,21 @@
       "server": "server-1",
       "noReset": true,
       "newCommandTimeout": 360,
-      "wdaLocalPort": 8100
+      "wdaLocalPort": 8100,
+      "model": "iphone13_pro_max"
     },
     {
-      "name": "Tristan's iPhone",
+      "name": "Tristan\u2019s iPhone",
       "udid": "00008140-000869980208801C",
       "platformName": "iOS",
       "platformVersion": "18.1.1",
       "deviceName": "iPhone",
       "automationName": "XCUITest",
       "server": "server-2",
+      "wdaLocalPort": 8101,
       "noReset": true,
       "newCommandTimeout": 360,
-      "wdaLocalPort": 8101
-    },
-    {
-      "name": "Morgan\u2019s iPhone",
-      "udid": "00008110-0000052C02EA401E",
-      "platformName": "iOS",
-      "platformVersion": "17.4.1",
-      "deviceName": "iPhone",
-      "automationName": "XCUITest",
-      "server": "server-1",
-      "wdaLocalPort": 8102,
-      "noReset": true,
-      "newCommandTimeout": 360
+      "model": "iphone16_pro"
     }
   ]
 }

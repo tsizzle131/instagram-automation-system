@@ -43,56 +43,6 @@
       "label": "Following",
       "x": 0.65,
       "y": 0.25
-    },
-    "edit_profile": {
-      "name": "edit_profile",
-      "label": "Edit Profile",
-      "x": 0.5,
-      "y": 0.3
-    },
-    "grid_view": {
-      "name": "grid_view",
-      "label": "Grid Posts",
-      "x": 0.25,
-      "y": 0.4
-    },
-    "reels_view": {
-      "name": "reels_view",
-      "label": "Reels",
-      "x": 0.5,
-      "y": 0.4
-    },
-    "tagged_view": {
-      "name": "tagged_view",
-      "label": "Tagged",
-      "x": 0.75,
-      "y": 0.4
-    }
-  },
-  "direct_messages": {
-    "new_message": {
-      "name": "new_message",
-      "label": "New Message",
-      "x": 0.9,
-      "y": 0.1
-    },
-    "search_messages": {
-      "name": "search_messages",
-      "label": "Search",
-      "x": 0.5,
-      "y": 0.1
-    },
-    "primary_tab": {
-      "name": "primary_tab",
-      "label": "Primary",
-      "x": 0.25,
-      "y": 0.15
-    },
-    "general_tab": {
-      "name": "general_tab",
-      "label": "General",
-      "x": 0.75,
-      "y": 0.15
     }
   }
 }

@@ -41,7 +41,7 @@ def initialize_system():
     device_manager = DeviceManager(DEFAULT_CONFIG_PATH)
     
     # Initialize task runner
-    task_runner = InstagramTaskRunner(device_manager, DEFAULT_UI_MAP_PATH)
+    task_runner = InstagramTaskRunner(device_manager)
     
     logger.info("System core initialized. Attempting to initialize all configured devices...")
     if device_manager: # Add a check to be safe
@@ -67,6 +67,19 @@ def get_status():
     devices = device_manager.get_device_status()
     servers = device_manager.get_server_status()
     tasks = {}
+    
+    # Add managed accounts to device status
+    managed_accounts_path = os.path.join(BASE_DIR, 'config', 'managed_accounts.json')
+    if os.path.exists(managed_accounts_path):
+        try:
+            with open(managed_accounts_path, 'r') as f:
+                managed_accounts = json.load(f)
+            
+            # Add accounts to each device in the status
+            for device_id, device_info in devices.items():
+                device_info['managed_accounts'] = managed_accounts.get(device_id, [])
+        except Exception as e:
+            logger.error(f"Error loading managed accounts: {str(e)}")
     
     if task_runner:
         tasks = task_runner.get_running_tasks()
@@ -195,6 +208,35 @@ def initialize_device(device_id):
             'success': False,
             'error': f"Failed to initialize device {device_config['name']}"
         }), 500
+
+@app.route('/api/devices/<device_id>/setup', methods=['POST'])
+def setup_device_endpoint(device_id):
+    """Endpoint to trigger the 'setup_device' task for a specific device."""
+    if not device_manager or not task_runner:
+        logger.error("setup_device_endpoint: System not initialized.")
+        return jsonify({'success': False, 'error': 'System not initialized'}), 500
+
+    logger.info(f"Received request to setup device: {device_id}")
+    
+    # Check if device exists and get its info
+    all_devices_status = device_manager.get_device_status()
+    if device_id not in all_devices_status:
+        logger.error(f"setup_device_endpoint: Device {device_id} not found in device manager.")
+        return jsonify({'success': False, 'error': 'Device not found'}), 404
+    
+    device_info = all_devices_status[device_id]
+    
+    # Check if device is ready for a new task (e.g., not busy, connected)
+    if device_info['status'] != 'ready': # Assuming 'ready' is the correct status
+        logger.warning(f"Device {device_id} is not in 'ready' state (current: {device_info['status']}). Task may fail or be queued.")
+        # Allowing task to proceed, TaskRunner should handle non-ready states if necessary
+        # Or, uncomment below to return an error if not ready:
+        # return jsonify({'success': False, 'error': f'Device not ready (status: {device_info["status"]})'}), 409
+
+    logger.info(f"Executing setup_device task for device: {device_id}, info: {device_info}")
+    result = task_runner.execute_task('setup_device', device_id, device_info=device_info)
+    
+    return jsonify(result)
 
 @app.route('/api/devices/<device_id>/task', methods=['POST'])
 def execute_task(device_id):
