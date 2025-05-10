@@ -15,97 +15,28 @@
   ],
   "devices": [
     {
-      "name": "Tristan's iPhone",
+      "name": "Tristan waite iPhone",
       "udid": "00008110-000A04D11AD3801E",
       "platformName": "iOS",
       "platformVersion": "18.0",
       "deviceName": "iPhone",
       "automationName": "XCUITest",
-      "server": "server-2",
+      "server": "server-1",
       "noReset": true,
       "newCommandTimeout": 360,
       "wdaLocalPort": 8100
     },
     {
-      "name": "Tristan\u2019s iPhone",
+      "name": "Tristan's iPhone",
       "udid": "00008140-000869980208801C",
       "platformName": "iOS",
       "platformVersion": "18.1.1",
       "deviceName": "iPhone",
       "automationName": "XCUITest",
-      "server": "server-1"
-    },
-    {
-      "name": "Tristan\u2019s iPhone",
-      "udid": "00008140-000869980208801C",
-      "platformName": "iOS",
-      "platformVersion": "18.1.1",
-      "deviceName": "iPhone",
-      "automationName": "XCUITest",
-      "server": "server-1"
-    },
-    {
-      "name": "iPad",
-      "udid": "8108E3A8-E2E0-44C6-A1D8-E216729638E1",
-      "platformName": "iOS",
-      "platformVersion": "18.3.1",
-      "deviceName": "iPad",
-      "automationName": "XCUITest",
-      "server": "server-1"
-    },
-    {
-      "name": "iPad",
-      "udid": "8108E3A8-E2E0-44C6-A1D8-E216729638E1",
-      "platformName": "iOS",
-      "platformVersion": "18.3.1",
-      "deviceName": "iPad",
-      "automationName": "XCUITest",
-      "server": "server-1"
-    },
-    {
-      "name": "iPad Air 11-inch",
-      "udid": "A2244367-5775-44E5-8224-E7D54751CE03",
-      "platformName": "iOS",
-      "platformVersion": "18.3.1",
-      "deviceName": "11-inch",
-      "automationName": "XCUITest",
-      "server": "server-1"
-    },
-    {
-      "name": "iPad Air 11-inch",
-      "udid": "A2244367-5775-44E5-8224-E7D54751CE03",
-      "platformName": "iOS",
-      "platformVersion": "18.3.1",
-      "deviceName": "11-inch",
-      "automationName": "XCUITest",
-      "server": "server-2"
-    },
-    {
-      "name": "iPad Air 13-inch",
-      "udid": "98E1C267-0DCB-40EC-BA08-C780FD3CF58E",
-      "platformName": "iOS",
-      "platformVersion": "18.3.1",
-      "deviceName": "13-inch",
-      "automationName": "XCUITest",
-      "server": "server-2"
-    },
-    {
-      "name": "iPad Air 13-inch",
-      "udid": "98E1C267-0DCB-40EC-BA08-C780FD3CF58E",
-      "platformName": "iOS",
-      "platformVersion": "18.3.1",
-      "deviceName": "13-inch",
-      "automationName": "XCUITest",
-      "server": "server-2"
-    },
-    {
-      "name": "iPad Pro 11-inch",
-      "udid": "46B31E37-7475-4F41-8972-432B2BB2C173",
-      "platformName": "iOS",
-      "platformVersion": "18.3.1",
-      "deviceName": "11-inch",
-      "automationName": "XCUITest",
-      "server": "server-2"
+      "server": "server-2",
+      "noReset": true,
+      "newCommandTimeout": 360,
+      "wdaLocalPort": 8101
     }
   ]
 }

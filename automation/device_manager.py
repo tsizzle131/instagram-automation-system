@@ -218,7 +218,7 @@ class DeviceManager:
                 'automationName': device_config['automationName'],
                 'noReset': True,  # Keep app data between sessions
                 'newCommandTimeout': 360,
-                'wdaLocalPort': 8100
+                'wdaLocalPort': device_config.get('wdaLocalPort', 8100)
             }
             
             logger.info(f"Using capabilities: {desired_caps}")
