@@ -143,6 +143,79 @@
   font-size: 14px;
 }
 
+/* Server devices dropdown */
+.device-count-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.expand-button {
+  background: none;
+  border: none;
+  font-size: 12px;
+  cursor: pointer;
+  color: #666;
+  padding: 2px 5px;
+  transition: transform 0.2s;
+}
+
+.expand-button:hover {
+  color: #333;
+}
+
+.expand-button.expanded {
+  transform: rotate(0deg);
+}
+
+.server-devices {
+  margin-top: 10px;
+  border-top: 1px solid #eee;
+  padding-top: 10px;
+}
+
+.no-devices {
+  font-size: 12px;
+  color: #999;
+  font-style: italic;
+  margin: 5px 0;
+}
+
+.device-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.device-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 0;
+  font-size: 13px;
+  border-bottom: 1px dashed #eee;
+}
+
+.device-item:last-child {
+  border-bottom: none;
+}
+
+.device-item.status-ready .device-name {
+  color: #27ae60;
+}
+
+.device-item.status-busy .device-name {
+  color: #f39c12;
+}
+
+.device-item.status-disconnected .device-name {
+  color: #e74c3c;
+}
+
+.device-name {
+  font-weight: 500;
+}
+
 /* Device list */
 .devices-list {
   display: grid;

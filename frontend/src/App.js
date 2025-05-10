@@ -10,7 +10,9 @@ function App() {
   const [status, setStatus] = useState('loading');
   const [devices, setDevices] = useState({});
   const [servers, setServers] = useState({});
+  const [serverDevices, setServerDevices] = useState({}); // Map of server ID to array of device IDs
   const [tasks, setTasks] = useState({});
+  const [expandedServers, setExpandedServers] = useState({});
   const [newDevice, setNewDevice] = useState({
     name: '',
     udid: '',
@@ -43,14 +45,58 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Toggle server expansion
+  const toggleServerExpansion = (serverId) => {
+    setExpandedServers(prev => ({
+      ...prev,
+      [serverId]: !prev[serverId]
+    }));
+  };
+
+  // Get devices assigned to a specific server
+  const getDevicesForServer = (serverId) => {
+    // Use the pre-built mapping of server -> device IDs
+    const deviceIds = serverDevices[serverId] || [];
+    
+    // Convert device IDs to device objects
+    return deviceIds.map(deviceId => ({
+      id: deviceId,
+      ...devices[deviceId]
+    }));
+  };
+
   // Fetch the status from the API
   const fetchStatus = async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/status`);
+      
       setStatus(response.data.status);
       setDevices(response.data.devices || {});
       setServers(response.data.servers || {});
       setTasks(response.data.tasks || {});
+      
+      // Create a mapping of server ID -> device IDs
+      const tempServerDevices = {};
+      
+      // Process device data to create server to device mapping
+      Object.entries(response.data.devices || {}).forEach(([deviceId, deviceInfo]) => {
+        const serverId = deviceInfo.server;
+        if (serverId) {
+          if (!tempServerDevices[serverId]) {
+            tempServerDevices[serverId] = [];
+          }
+          tempServerDevices[serverId].push(deviceId);
+        }
+      });
+      
+      console.log("Server to device mapping:", tempServerDevices);
+      setServerDevices(tempServerDevices);
+      
+      // Log device assignments for debugging
+      setTimeout(() => {
+        logDeviceAssignments();
+      }, 500); // Small delay to ensure state has updated
+      
       setError(null);
     } catch (err) {
       setError(`Error fetching status: ${err.message}`);
@@ -62,7 +108,10 @@ function App() {
   const initializeSystem = async () => {
     try {
       setStatus('initializing');
-      await axios.post(`${API_BASE_URL}/initialize`);
+      const response = await axios.post(`${API_BASE_URL}/initialize`);
+      console.log("Initialization response:", response.data);
+      
+      // Fetch updated status information
       await fetchStatus();
     } catch (err) {
       setError(`Error initializing system: ${err.message}`);
@@ -73,7 +122,10 @@ function App() {
   // Initialize a device
   const initializeDevice = async (deviceId) => {
     try {
-      await axios.post(`${API_BASE_URL}/devices/${deviceId}/initialize`);
+      const response = await axios.post(`${API_BASE_URL}/devices/${deviceId}/initialize`);
+      console.log(`Device ${deviceId} initialization response:`, response.data);
+      
+      // Fetch updated status information
       await fetchStatus();
     } catch (err) {
       setError(`Error initializing device: ${err.message}`);
@@ -213,7 +265,20 @@ function App() {
   // Get server info for a device
   const getServerForDevice = (deviceInfo) => {
     const serverId = deviceInfo.server;
-    return servers[serverId] || null;
+    return serverId ? servers[serverId] : null;
+  };
+
+  // Debug function to check device assignments
+  const logDeviceAssignments = () => {
+    console.log("Current device assignments:");
+    Object.entries(devices).forEach(([deviceId, deviceInfo]) => {
+      console.log(`Device ${deviceInfo.name} (${deviceId}) is assigned to server ${deviceInfo.server}`);
+    });
+    
+    console.log("Current server device mappings:");
+    Object.entries(serverDevices).forEach(([serverId, deviceIds]) => {
+      console.log(`Server ${serverId} has devices: ${deviceIds.join(', ')}`);
+    });
   };
 
   return (
@@ -304,21 +369,55 @@ function App() {
               {Object.keys(servers).length === 0 ? (
                 <div className="empty-message">No servers configured</div>
               ) : (
-                Object.entries(servers).map(([serverId, serverInfo]) => (
-                  <div key={serverId} className={`server-card status-${serverInfo.status}`}>
-                    <div className="server-header">
-                      <h3>{serverInfo.name}</h3>
-                      <span className={`server-status ${serverInfo.status}`}>
-                        {serverInfo.status}
-                      </span>
+                Object.entries(servers).map(([serverId, serverInfo]) => {
+                  const serverDevicesList = getDevicesForServer(serverId);
+                  const isExpanded = expandedServers[serverId];
+                  
+                  // Check if we have any devices for this server
+                  const hasDevices = serverDevicesList && serverDevicesList.length > 0;
+                  
+                  return (
+                    <div key={serverId} className={`server-card status-${serverInfo.status}`}>
+                      <div className="server-header">
+                        <h3>{serverInfo.name}</h3>
+                        <span className={`server-status ${serverInfo.status}`}>
+                          {serverInfo.status}
+                        </span>
+                      </div>
+                      <div className="server-details">
+                        <p><strong>Host:</strong> {serverInfo.config?.host || "Unknown"}</p>
+                        <p><strong>Port:</strong> {serverInfo.port}</p>
+                        <p className="device-count-row">
+                          <strong>Devices:</strong> {serverInfo.device_count} / {serverInfo.max_devices}
+                          <button 
+                            className={`expand-button ${isExpanded ? 'expanded' : ''}`}
+                            onClick={() => toggleServerExpansion(serverId)}
+                          >
+                            {isExpanded ? '▼' : '▶'}
+                          </button>
+                        </p>
+                      </div>
+                      {isExpanded && (
+                        <div className="server-devices">
+                          {!hasDevices ? (
+                            <p className="no-devices">No devices assigned to this server</p>
+                          ) : (
+                            <ul className="device-list">
+                              {serverDevicesList.map((device) => (
+                                <li key={device.id} className={`device-item status-${device.status}`}>
+                                  <span className="device-name">{device.name}</span>
+                                  <span className={`device-status ${device.status}`}>
+                                    {device.status}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <div className="server-details">
-                      <p><strong>Host:</strong> {serverInfo.config?.host || "Unknown"}</p>
-                      <p><strong>Port:</strong> {serverInfo.port}</p>
-                      <p><strong>Devices:</strong> {serverInfo.device_count} / {serverInfo.max_devices}</p>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           )}
