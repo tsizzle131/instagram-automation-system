@@ -4,6 +4,8 @@ import logging
 import time
 import threading
 import requests
+import subprocess
+import re
 from appium import webdriver
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -18,6 +20,7 @@ class DeviceManager:
         self.drivers = {}  # Stores Appium drivers
         self.servers = {}  # Stores server info
         self.lock = threading.Lock()  # For thread safety
+        self.real_device_udids = self._get_real_device_udids()  # Cache real device UDIDs
         
         # Load config if provided, otherwise use defaults
         if config_path and os.path.exists(config_path):
@@ -40,6 +43,71 @@ class DeviceManager:
         
         # Initialize servers tracking
         self._initialize_servers()
+    
+    def _get_real_device_udids(self):
+        """Get list of connected real device UDIDs"""
+        real_devices = []
+        
+        # Get iOS devices using idevice_id
+        try:
+            result = subprocess.run(['idevice_id', '-l'], 
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE,
+                                   universal_newlines=True)
+            
+            if result.returncode == 0:
+                for line in result.stdout.strip().split('\n'):
+                    if line.strip():
+                        real_devices.append(line.strip())
+        except Exception as e:
+            logger.warning(f"Error getting iOS device list: {str(e)}")
+        
+        # Get Android devices
+        try:
+            result = subprocess.run(['adb', 'devices'], 
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE,
+                                   universal_newlines=True)
+            
+            if result.returncode == 0:
+                for line in result.stdout.splitlines()[1:]:  # Skip header
+                    if '\t' in line and 'device' in line:
+                        udid = line.split('\t')[0].strip()
+                        if udid:
+                            real_devices.append(udid)
+        except Exception as e:
+            logger.warning(f"Error getting Android device list: {str(e)}")
+        
+        logger.info(f"Detected real devices: {real_devices}")
+        return real_devices
+    
+    def is_simulator(self, udid):
+        """Check if a device is a simulator based on its UDID"""
+        # Refresh real devices list
+        if not hasattr(self, 'real_device_udids') or not self.real_device_udids:
+            self.real_device_udids = self._get_real_device_udids()
+        
+        # Common iOS simulator patterns
+        ios_simulator_patterns = [
+            # Simulator UDIDs are typically UUIDs
+            r'^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$'
+        ]
+        
+        # Check if it's in our list of real devices
+        if udid in self.real_device_udids:
+            return False
+        
+        # Check against simulator patterns
+        for pattern in ios_simulator_patterns:
+            if re.match(pattern, udid, re.IGNORECASE):
+                return True
+                
+        # If the UDID is very short, it's likely an emulator
+        if len(udid) < 10:
+            return True
+            
+        # Default to real device if we can't determine
+        return False
     
     def check_appium_server(self, host, port):
         """Check if Appium server is running on the specified host and port"""
@@ -74,19 +142,13 @@ class DeviceManager:
             device_count = sum(1 for d in self.config["devices"] 
                               if d.get("server") == server_id)
             
-            # Check if server is running
-            server_status = "running" if self.check_appium_server(
-                server_config["host"], 
-                server_config["port"]
-            ) else "disconnected"
-            
             self.servers[server_id] = {
                 "config": server_config,
                 "device_count": device_count,
-                "status": server_status
+                "status": "disconnected"
             }
             
-            logger.info(f"Initialized server {server_id} with {device_count} assigned devices - Status: {server_status}")
+            logger.info(f"Initialized server {server_id} with {device_count} assigned devices")
     
     def add_device(self, name, udid, platform_name, platform_version, device_name, automation_name):
         """Add a device to be managed with automatic server assignment"""
@@ -242,11 +304,15 @@ class DeviceManager:
         
         with self.lock:
             for device_id, device_info in self.devices.items():
+                # Determine if this is a simulator
+                is_sim = self.is_simulator(device_id)
+                
                 statuses[device_id] = {
                     'name': device_info['config']['name'],
                     'status': device_info['status'],
                     'last_active': device_info['last_active'],
-                    'server': device_info['server']
+                    'server': device_info['server'],
+                    'is_simulator': is_sim
                 }
         
         return statuses
@@ -257,19 +323,9 @@ class DeviceManager:
         
         with self.lock:
             for server_id, server_info in self.servers.items():
-                # Check current server status
-                server_config = server_info["config"]
-                current_status = "running" if self.check_appium_server(
-                    server_config["host"], 
-                    server_config["port"]
-                ) else "disconnected"
-                
-                # Update status in server info
-                self.servers[server_id]["status"] = current_status
-                
                 statuses[server_id] = {
                     'name': server_id,
-                    'status': current_status,
+                    'status': server_info['status'],
                     'device_count': server_info['device_count'],
                     'max_devices': server_info['config']['max_devices'],
                     'port': server_info['config']['port']

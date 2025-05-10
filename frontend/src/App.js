@@ -13,6 +13,7 @@ function App() {
   const [serverDevices, setServerDevices] = useState({}); // Map of server ID to array of device IDs
   const [tasks, setTasks] = useState({});
   const [expandedServers, setExpandedServers] = useState({});
+  const [showOnlyRealDevices, setShowOnlyRealDevices] = useState(true); // Default to showing only real devices
   const [newDevice, setNewDevice] = useState({
     name: '',
     udid: '',
@@ -33,6 +34,28 @@ function App() {
   const [taskResult, setTaskResult] = useState(null);
   const [selectedTask, setSelectedTask] = useState('go_to_profile');
   const [taskInterval, setTaskInterval] = useState('');
+
+  // Toggle showing simulators
+  const toggleShowOnlyRealDevices = () => {
+    setShowOnlyRealDevices(!showOnlyRealDevices);
+  };
+
+  // Get filtered devices (real or all)
+  const getFilteredDevices = () => {
+    if (!showOnlyRealDevices) {
+      return devices;
+    }
+    
+    // Filter out simulators
+    const filtered = {};
+    Object.entries(devices).forEach(([deviceId, deviceInfo]) => {
+      if (!deviceInfo.is_simulator) {
+        filtered[deviceId] = deviceInfo;
+      }
+    });
+    
+    return filtered;
+  };
 
   // Fetch system status when component mounts
   useEffect(() => {
@@ -58,11 +81,15 @@ function App() {
     // Use the pre-built mapping of server -> device IDs
     const deviceIds = serverDevices[serverId] || [];
     
-    // Convert device IDs to device objects
-    return deviceIds.map(deviceId => ({
-      id: deviceId,
-      ...devices[deviceId]
-    }));
+    // Convert device IDs to device objects and apply filter if needed
+    const devicesList = deviceIds
+      .map(deviceId => ({
+        id: deviceId,
+        ...devices[deviceId]
+      }))
+      .filter(device => !showOnlyRealDevices || !device.is_simulator);
+    
+    return devicesList;
   };
 
   // Fetch the status from the API
@@ -89,13 +116,7 @@ function App() {
         }
       });
       
-      console.log("Server to device mapping:", tempServerDevices);
       setServerDevices(tempServerDevices);
-      
-      // Log device assignments for debugging
-      setTimeout(() => {
-        logDeviceAssignments();
-      }, 500); // Small delay to ensure state has updated
       
       setError(null);
     } catch (err) {
@@ -108,10 +129,7 @@ function App() {
   const initializeSystem = async () => {
     try {
       setStatus('initializing');
-      const response = await axios.post(`${API_BASE_URL}/initialize`);
-      console.log("Initialization response:", response.data);
-      
-      // Fetch updated status information
+      await axios.post(`${API_BASE_URL}/initialize`);
       await fetchStatus();
     } catch (err) {
       setError(`Error initializing system: ${err.message}`);
@@ -122,10 +140,7 @@ function App() {
   // Initialize a device
   const initializeDevice = async (deviceId) => {
     try {
-      const response = await axios.post(`${API_BASE_URL}/devices/${deviceId}/initialize`);
-      console.log(`Device ${deviceId} initialization response:`, response.data);
-      
-      // Fetch updated status information
+      await axios.post(`${API_BASE_URL}/devices/${deviceId}/initialize`);
       await fetchStatus();
     } catch (err) {
       setError(`Error initializing device: ${err.message}`);
@@ -265,20 +280,7 @@ function App() {
   // Get server info for a device
   const getServerForDevice = (deviceInfo) => {
     const serverId = deviceInfo.server;
-    return serverId ? servers[serverId] : null;
-  };
-
-  // Debug function to check device assignments
-  const logDeviceAssignments = () => {
-    console.log("Current device assignments:");
-    Object.entries(devices).forEach(([deviceId, deviceInfo]) => {
-      console.log(`Device ${deviceInfo.name} (${deviceId}) is assigned to server ${deviceInfo.server}`);
-    });
-    
-    console.log("Current server device mappings:");
-    Object.entries(serverDevices).forEach(([serverId, deviceIds]) => {
-      console.log(`Server ${serverId} has devices: ${deviceIds.join(', ')}`);
-    });
+    return servers[serverId] || null;
   };
 
   return (
@@ -373,6 +375,9 @@ function App() {
                   const serverDevicesList = getDevicesForServer(serverId);
                   const isExpanded = expandedServers[serverId];
                   
+                  // Count real devices on this server
+                  const realDeviceCount = serverDevicesList.filter(device => !device.is_simulator).length;
+                  
                   // Check if we have any devices for this server
                   const hasDevices = serverDevicesList && serverDevicesList.length > 0;
                   
@@ -388,7 +393,9 @@ function App() {
                         <p><strong>Host:</strong> {serverInfo.config?.host || "Unknown"}</p>
                         <p><strong>Port:</strong> {serverInfo.port}</p>
                         <p className="device-count-row">
-                          <strong>Devices:</strong> {serverInfo.device_count} / {serverInfo.max_devices}
+                          <strong>Devices:</strong> {showOnlyRealDevices ? 
+                            `${realDeviceCount} real / ${serverInfo.max_devices}` : 
+                            `${serverInfo.device_count} / ${serverInfo.max_devices}`}
                           <button 
                             className={`expand-button ${isExpanded ? 'expanded' : ''}`}
                             onClick={() => toggleServerExpansion(serverId)}
@@ -400,12 +407,19 @@ function App() {
                       {isExpanded && (
                         <div className="server-devices">
                           {!hasDevices ? (
-                            <p className="no-devices">No devices assigned to this server</p>
+                            <p className="no-devices">
+                              {showOnlyRealDevices 
+                                ? 'No real devices assigned to this server' 
+                                : 'No devices assigned to this server'}
+                            </p>
                           ) : (
                             <ul className="device-list">
                               {serverDevicesList.map((device) => (
-                                <li key={device.id} className={`device-item status-${device.status}`}>
-                                  <span className="device-name">{device.name}</span>
+                                <li key={device.id} className={`device-item status-${device.status} ${device.is_simulator ? 'simulator' : 'real-device'}`}>
+                                  <span className="device-name">
+                                    {device.name}
+                                    {device.is_simulator && <span className="mini-simulator-badge">Sim</span>}
+                                  </span>
                                   <span className={`device-status ${device.status}`}>
                                     {device.status}
                                   </span>
@@ -428,6 +442,12 @@ function App() {
           <div className="section-header">
             <h2>Connected Devices</h2>
             <div className="header-buttons">
+              <button 
+                onClick={toggleShowOnlyRealDevices} 
+                className={`filter-button ${showOnlyRealDevices ? 'active' : ''}`}
+              >
+                {showOnlyRealDevices ? 'Real Devices Only' : 'Show All Devices'}
+              </button>
               <button onClick={refreshDevices} className="refresh-button">
                 Refresh Devices
               </button>
@@ -520,19 +540,28 @@ function App() {
             </div>
           ) : (
             <div className="devices-list">
-              {Object.keys(devices).length === 0 ? (
-                <div className="empty-message">No devices connected</div>
+              {Object.keys(getFilteredDevices()).length === 0 ? (
+                <div className="empty-message">
+                  {showOnlyRealDevices 
+                    ? "No real devices connected. Connect a device or toggle to show simulators." 
+                    : "No devices connected"}
+                </div>
               ) : (
-                Object.entries(devices).map(([deviceId, deviceInfo]) => {
+                Object.entries(getFilteredDevices()).map(([deviceId, deviceInfo]) => {
                   const serverInfo = getServerForDevice(deviceInfo);
                   
                   return (
-                    <div key={deviceId} className={`device-card status-${deviceInfo.status}`}>
+                    <div key={deviceId} className={`device-card status-${deviceInfo.status} ${deviceInfo.is_simulator ? 'simulator' : 'real-device'}`}>
                       <div className="device-header">
                         <h3>{deviceInfo.name}</h3>
-                        <span className={`device-status ${deviceInfo.status}`}>
-                          {deviceInfo.status}
-                        </span>
+                        <div className="device-indicators">
+                          {deviceInfo.is_simulator && (
+                            <span className="simulator-badge">Simulator</span>
+                          )}
+                          <span className={`device-status ${deviceInfo.status}`}>
+                            {deviceInfo.status}
+                          </span>
+                        </div>
                       </div>
                       <div className="device-details">
                         <p><strong>UDID:</strong> {deviceId.substring(0, 8)}...</p>

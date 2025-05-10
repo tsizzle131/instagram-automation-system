@@ -332,9 +332,9 @@ def refresh_devices():
                                    universal_newlines=True,
                                    check=True)
             
-            # Parse the output to find real devices (not simulators)
+            # Parse the output to find ONLY real devices (not simulators)
             for line in result.stdout.splitlines():
-                # Look for lines with device info like "iPhone (14.0) (00008020-00...)"
+                # Filter out simulators and Macs - only include real iOS devices
                 if "(" in line and ")" in line and not "Simulator" in line and not "Mac" in line:
                     try:
                         # Extract device name and UDID
@@ -346,14 +346,21 @@ def refresh_devices():
                         # Validate that it looks like a UDID
                         if len(udid) > 10 and not udid.startswith("com."):
                             ios_version = parts[-2].split(')')[0].strip() if len(parts) > 2 else "Unknown"
-                            ios_devices.append({
-                                "name": device_name,
-                                "udid": udid,
-                                "platformName": "iOS",
-                                "platformVersion": ios_version,
-                                "deviceName": device_name.split(" ")[-1],  # Usually iPhone, iPad, etc.
-                                "automationName": "XCUITest"
-                            })
+                            
+                            # Extra check to make sure it's a real device and not a simulator
+                            if device_manager._get_real_device_udids() and udid in device_manager._get_real_device_udids():
+                                ios_devices.append({
+                                    "name": device_name,
+                                    "udid": udid,
+                                    "platformName": "iOS",
+                                    "platformVersion": ios_version,
+                                    "deviceName": device_name.split(" ")[-1],  # Usually iPhone, iPad, etc.
+                                    "automationName": "XCUITest",
+                                    "is_simulator": False
+                                })
+                                logger.info(f"Found real iOS device: {device_name} ({udid})")
+                            else:
+                                logger.info(f"Skipping simulator or virtual device: {device_name} ({udid})")
                     except Exception as parse_error:
                         logger.error(f"Error parsing iOS device line: {line}, error: {str(parse_error)}")
         except Exception as ios_error:
@@ -372,12 +379,13 @@ def refresh_devices():
             # Parse the output to find connected devices
             lines = result.stdout.splitlines()
             for line in lines[1:]:  # Skip the first line which is the header
-                if '\t' in line and not "offline" in line:
+                if '\t' in line and not "offline" in line and not "emulator" in line:  # Skip emulators
                     try:
                         parts = line.strip().split('\t')
                         udid = parts[0].strip()
                         
-                        if udid and len(udid) > 5:
+                        # Skip emulators
+                        if udid and len(udid) > 5 and not udid.startswith("emulator-"):
                             # Get device model and version - fixed for Python 3.6 compatibility
                             model_cmd = subprocess.run(
                                 ['adb', '-s', udid, 'shell', 'getprop', 'ro.product.model'],
@@ -399,7 +407,8 @@ def refresh_devices():
                                 "platformName": "Android",
                                 "platformVersion": version,
                                 "deviceName": model,
-                                "automationName": "UiAutomator2"
+                                "automationName": "UiAutomator2",
+                                "is_simulator": False
                             })
                     except Exception as parse_error:
                         logger.error(f"Error parsing Android device: {line}, error: {str(parse_error)}")
@@ -408,12 +417,12 @@ def refresh_devices():
         
         # Combine all devices
         all_devices = ios_devices + android_devices
-        logger.info(f"Found {len(all_devices)} devices: {all_devices}")
+        logger.info(f"Found {len(all_devices)} real devices: {all_devices}")
         
         if not all_devices:
             return jsonify({
                 'success': False,
-                'message': 'No devices found connected to the computer'
+                'message': 'No real devices found connected to the computer'
             }), 404
         
         # Check which devices are already registered
